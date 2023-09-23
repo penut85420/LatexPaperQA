@@ -1,0 +1,599 @@
+
+\documentclass{article} % For LaTeX2e
+\usepackage{iclr2024_conference_author,times}
+
+% Optional math commands from https://github.com/goodfeli/dlbook_notation.
+\input{math_commands.tex}
+
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{graphicx}
+
+\usepackage{booktabs}
+\usepackage{tablefootnote}
+\usepackage[flushleft]{threeparttable}
+
+\usepackage{lipsum}
+\usepackage{bbding}
+\usepackage{url}
+
+\usepackage{color}
+\usepackage{enumitem}
+
+\usepackage{multirow}
+\usepackage{ulem}
+
+\usepackage{url}            % simple URL typesetting
+\usepackage{tcolorbox}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}
+\definecolor{mygreen}{HTML}{3cb44b}
+\usepackage{listings}
+
+%----------------------------------------------------------
+% this is for adding footnote after algorithm
+\usepackage{etoolbox}
+\makeatletter
+\AfterEndEnvironment{algorithm}{\let\@algcomment\relax}
+\AtEndEnvironment{algorithm}{\kern2pt\hrule\relax\vskip3pt\@algcomment}
+\let\@algcomment\relax
+\newcommand\algcomment[1]{\def\@algcomment{\footnotesize#1}}
+%\renewcommand\fs@ruled{\def\@fs@cfont{\bfseries}\let\@fs@capt\floatc@ruled
+%  \def\@fs@pre{\hrule height.8pt depth0pt \kern2pt}%
+%  \def\@fs@post{}%
+%  \def\@fs@mid{\kern2pt\hrule\kern2pt}%
+%  \let\@fs@iftopcapt\iftrue}
+\makeatother
+%----------------------------------------------------------
+
+
+% zttian
+\newcommand\ztc[1]{\textcolor{cyan}{[zttian: #1]}}
+\newcommand\zta[1]{\textcolor{cyan}{#1}}
+\newcommand\ztr[1]{\textcolor{cyan}{\sout{#1}}}
+% \newcommand{\ie}[1]{\textit{i.e.}{#1}}
+% \newcommand{\eg}[1]{\textit{e.g.}{#1}}
+\renewcommand{\vec}[1]{\boldsymbol{#1}}
+% ywli
+\newcommand{\ywli}[1]{{\color{orange}{[ywli: #1]}}}
+
+\input{mlVecMat}
+
+\title{LongLoRA: Efficient Fine-tuning of Long-Context Large Language Models}
+
+% Authors must not appear in the submitted version. They should be hidden
+% as long as the \iclrfinalcopy macro remains commented out below.
+% Non-anonymous submissions will be rejected without review.
+
+\author{%
+\qquad \qquad $\,$ Yukang Chen~$^{1}$\qquad
+Shengju Qian~$^{1}$\qquad
+Haotian Tang~$^{2}$\qquad
+Xin Lai~$^{1}$\qquad \qquad
+\\[0.1cm]
+\textbf{%
+\qquad \qquad \, Zhijian Liu~$^{2}$\qquad
+Song Han~$^{2}$\qquad
+Jiaya Jia~$^{1}$
+}
+\\[0.2cm]
+\qquad $^1$CUHK\qquad
+$^2$MIT\qquad
+}
+% The \author macro works with any number of authors. There are two commands
+% used to separate the names and addresses of multiple authors: \And and \AND.
+%
+% Using \And between authors leaves it to \LaTeX{} to determine where to break
+% the lines. Using \AND forces a linebreak at that point. So, if \LaTeX{}
+% puts 3 of 4 authors names on the first line, and the last on the second
+% line, try using \AND instead of \And before the third author name.
+
+\newcommand{\fix}{\marginpar{FIX}}
+\newcommand{\new}{\marginpar{NEW}}
+
+\iclrfinalcopy % Uncomment for camera-ready version, but NOT for submission.
+\authorcentercopy
+\begin{document}
+
+\maketitle
+\begin{abstract}
+We present LongLoRA, an efficient fine-tuning approach that extends the context sizes of pre-trained large language models (LLMs), with limited computation cost.
+Typically, training LLMs with long context sizes is computationally expensive, requiring extensive training hours and GPU resources. For example, training on the context length of 8192 needs 16$\times$ computational costs in self-attention layers as that of 2048.
+In this paper, we speed up the context extension of LLMs in two aspects. On the one hand, although \textit{dense global} attention is needed during inference, fine-tuning the model can be effectively and efficiently done by \textit{sparse local} attention. The proposed shift short attention~(S$^2$-Attn) effectively enables context extension, leading to non-trivial computation saving with similar performance to fine-tuning with vanilla attention. Particularly, it can be implemented with only \textit{two lines of code} in training, while being optional in inference. On the other hand, we revisit the parameter-efficient fine-tuning regime for context expansion. Notably, we find that LoRA for context extension works well under the premise of trainable embedding and normalization. LongLoRA demonstrates strong empirical results on various tasks on LLaMA2 models from 7B/13B to 70B. LongLoRA adopts LLaMA2 7B from 4k context to 100k, or LLaMA2 70B to 32k on a single 8$\times$ A100 machine. LongLoRA extends models' context while retaining their original architectures, and is compatible with most existing techniques, like FlashAttention-2. In addition, to make LongLoRA practical, we collect a dataset, LongQA, for supervised fine-tuning. It contains more than 3k long context question-answer pairs. All our code, models, dataset, and demo are available at \href{https://github.com/dvlab-research/LongLoRA}{github.com/dvlab-research/LongLoRA}.
+\end{abstract}
+
+\begin{figure*}[h]
+\begin{center}
+\includegraphics[width=\linewidth]{figures/Efficiency-comparison.pdf}
+\end{center}
+\caption{Performance and efficiency comparison between full fine-tuning, plain LoRA, and our LongLoRA. We fine-tune LLaMA2 7B on various context lengths, with FlashAttention-2~\citep{flash-attention2} and DeepSpeed~\citep{deepspeed} stage 2. Perplexity is evaluated on the Proof-pile~\citep{proof-pile} test set. Plain LoRA baseline spends limited GPU memory cost, but its perplexity gets worse as the context length increases. LongLoRA achieves comparable performance to full fine-tuning while the computational cost is much less.}
+\label{fig:efficiency-comparison}
+\end{figure*}
+
+\section{Introduction}
+% LLMs backgrounds, pre-defined context, large computational cost for fine-tuning
+Large language models (LLMs) are typically trained with a pre-defined context size, such as 2048 tokens for LLaMA~\citep{llama} and 4096 tokens for LLaMA2~\citep{llama2}. However, the pre-defined size limits LLMs in many applications, like summarizing long documents or answering long questions. To resolve this limitation, some recent works~\citep{position-interpolation,focused-transformer,landmark-attention} train or fine-tune LLM to longer context. However, training an LLM from scratch with long sequences poses computational challenges, and fine-tuning an existing pre-trained LLM is also considerably expensive.
+For instance, Position Interpolation~\citep{position-interpolation} spent 32 A100 GPUs to extend LLaMA models from 2k to 8k context, and 128 A100 GPUs for longer context fine-tuning. FOT~\citep{focused-transformer} used 32 TPUs for standard transformer training and 128 TPUs for LongLLaMA. These computation resources are typically unaffordable for common researchers, which naturally leads us to question: Can we extend the context window of LLMs efficiently?
+
+\begin{figure*}[t]
+\begin{center}
+\includegraphics[width=1.0\linewidth]{figures/Long-lora.pdf}
+\end{center}
+\caption{Overview of LongLoRA designs. LongLoRA introduces shift short attention during fine-tuning. The trained model can retain its original standard self-attention during inference. In addition to plain LoRA weights, LongLoRA additionally makes embedding and normalization layers trainable, which is essential to long context learning, but takes up only a small proportion of parameters. %Taking LLaMA2 7B for example, there are only $<$ 2\% additionally trainable parameters. This ratio becomes smaller for larger LLMs.
+}
+\label{fig:long-lora}
+\end{figure*}
+
+% straightforward solution: Lora, but ineffective & inefficient
+One straightforward approach is to fine-tune a pre-trained LLM via low-rank adaptation~(LoRA)~\citep{lora}. LoRA modifies the linear projection layers in self-attention blocks by utilizing low-rank matrices, which are generally efficient and reduce the number of trainable parameters. However, our empirical findings indicate that training long context models in this manner is neither sufficiently effective nor efficient.
+In terms of \textit{effectiveness}, plain low-rank adaptation results in a high perplexity in long context extension, as in Table~\ref{tab:lora-settings}.
+Increasing the rank to a higher value, \textit{e.g.}, rank = 256, does not alleviate this issue. %This suggests that standard LoRA might lack some pre-requirements for long context adaptation.
+In terms of \textit{efficiency}, regardless of whether LoRA is employed or not, computational cost increases dramatically as the context size expands, primarily due to the standard self-attention mechanism~\citep{attention}. As shown in Figure~\ref{fig:efficiency-comparison}, even with LoRA, the training hours for the standard LLaMA2 model increase substantially when the context window expands.
+
+% what long context really learn?  existing methods
+In this work, we introduce LongLoRA, an efficient fine-tuning approach that extends the context windows of pre-trained LLMs, \textit{e.g.}, LLaMA2~\citep{llama2}. LoRA~\citep{lora} uses low-rank weight updates to approximate full fine-tuning. Similarly, we find that short attention is also able to approximate long context during training. We present shift short attention~(S$^2$-Attn) as an efficient substitute for standard self-attention. As shown in Figure~\ref{fig:long-lora}, we split context length into several groups and conduct attention in each group individually.
+In half attention heads, we shift the tokens by half group size, which ensures the information flow between neighbouring groups.
+For example, we use S$^2$-Attn with group size 2048 to approximate the total 8192 context length training. This shares a high-level spirit with Swin Transformer~\citep{swin-transformer}.
+
+Models fine-tuned via S$^2$-Attn retain the original attention architecture during inference. This facilitates most existing optimization and infrastructure. Techniques for common LLMs can also be applied to ours. For example, FlashAttention-2~\citep{flash-attention, flash-attention2} is compatible with our method in both training and inference time. The reason behind this is that short attention resembles the attention scheme in the pre-training stage of LLMs.
+Other efficient attentions, \textit{e.g.}, dilated or sparse attention, have a large gap to the standard style in the pre-training stage, as shown in Table~\ref{tab:attention-pattern}.
+
+%Talking back to low-rank adaptation, default LoRA, only adapting linear projections, is insufficient for context extension.
+We empirically show that learnable embedding and normalization layers are the key to unlocking long context LoRA fine-tuning, in Table~\ref{tab:lora-settings}. Embedding and normalization layers take up a small proportion of parameters in the entire LLM. For example, embedding has ($<$ 2\%) parameters, and normalization has ($\leq$ 0.004\%) parameters in LLaMA2 7B. This ratio decreases for even larger LLMs.
+
+In experiments, we show that LongLoRA is effective and efficient.
+We present experimental results of extending the context window for LLaMA2 7B, 13B, and 70B. Following the experimental settings of Position Interpolation~\citep{position-interpolation}, we fine-tune models with proper position embeddings. The trained models achieve comparable performance to the full-attention and fully fine-tuned results, while the computational cost is much less as shown in Figure~\ref{fig:efficiency-comparison}. LongLoRA can fine-tune LLaMA2 7B up to 100k context, or a 70B model up to 32k, on a single $8\times$ A100 machine.
+
+In addition, we present a dataset, LongQA, for supervised fine-tuning~(SFT). LongQA contains more than 3k long questions and the corresponding answers. We design various types of questions for technical paper, science fiction, and other books. SFT is important for improving the chat ability of LLMs. We present some examples of our trained models in the appendix.
+
+\begin{figure*}[t]
+\begin{center}
+\includegraphics[width=1.0\linewidth]{figures/Shift-short-attention2.pdf}
+\end{center}
+\caption{Illustration of shift short attention. Shift short attention involves three steps. First, it splits features along the head dimension into two chunks. Second, tokens in one of the chunks are shifted by half of the group size. Third, we split tokens into groups and reshape them into batch dimensions. Attention only computes in each group in ours while standard self-attention computes among all tokens. The information flows between groups via shifting.}
+\label{fig:shift-short-attention}
+\end{figure*}
+
+\section{Related Work}
+
+\paragraph{Long-context Transformers.}
+A large body of research has been developed to increase the context length of transformers. Some of these approaches are retrieval-based~\citep{retrieval-QA, few-shot-retrieval, realm}, which augment language models via fetching related documents and including the retrieved results into contexts. Our work is complementary to these works, as our attention mechanism is unmodified during inference.
+Many works modify multi-head attention to be approximated ones~\citep{linformer, long-former, big-bird, reformer, recurrent-memory-transformer, longnet, block-wise-self-attention}. They alleviate the quadratic complexity of the self-attention computation. For example, Longformer~\citep{long-former} and BigBird~\citep{big-bird} use sparse attention to handle long sequences. Other works~\citep{memorizing-transformer, recurrent-memory-transformer} utilize memory mechanisms as a compression on past inputs, to look up relevant tokens. One limitation of these works is that these compression has a large gap to full attention, making it infeasible to fine-tune pre-trained LLMs.
+Although our work also involves an approximation of attention mechanism, it has a similar shape and a small gap to standard attention. This enables ours to fine-tune pre-trained LLMs and maintain full attention during inference.
+
+\paragraph{Long-context LLMs.}
+LLMs are typically pre-trained with a pre-defined context length, such as 2048 for LLaMA~\citep{llama} and 4096 for LLaMA2~\citep{llama2}. Training LLMs with long context from
+scratch is prohibitively expensive for most researchers.
+Recently, a number of works have tried to extend the context length of LLMs via fine-tuning. Position Interpolation~\citep{position-interpolation} introduces a modification upon rotary position encoding~\citep{rope} and extends the context length of LLaMA to 32768. Focused Transformer~\citep{focused-transformer} utilizes contrastive learning to train LongLLaMA. Both of them rely on full fine-tuning, which is computationally expensive (128 A100 GPUs / 128 TPUv3 for training). Landmark attention~\citep{landmark-attention} is an efficient approach, but somewhat lossy. It compresses long context inputs into retrieved tokens. Our method saves substantial fine-tuning costs, while preserving the quality of the original attention.  Ours maintain full access to the entire input via unmodified attention during inference.
+
+Some literature focuses on the position embedding modification of LLMs for long context extension, including Position Interpolation~\citep{position-interpolation}, NTK-aware~\citep{ntk-pe}, Yarn~\citep{yarn}, positional Skipping~\citep{zhu2023pose}, and the out-of-distribution related method~\citep{lm-infinite}. Our method focuses on efficient fine-tuning and retaining the original architecture during inference, which is orthogonal to these position embedding methods. Our models apply the Position Interpolation~\citep{position-interpolation} in experiments.
+
+\paragraph{Efficient Fine-tuning.}
+This work is based on LoRA~\citep{lora}, a classical efficient fine-tuning approach. In addition to LoRA~\citep{lora}, there are many other parameter-efficient fine-tuning methods, including prompt tuning~\citep{prompt-tuning}, prefix tuning~\citep{prefix-tuning}, hidden state tuning~\citep{ia-3}, bias tuning~\citep{bitfit}, and masked weight learning~\citep{fisher-mask}. Input-tuning~\citep{input-tuning} introduces an adapter to tune input embedding. Although the input embedding layers are also trainable in ours, this is not enough for long context extension. We make a comprehensive analysis on layer types in experiments, in Table~\ref{tab:lora-settings}.
+
+\begin{table}[t]
+\begin{center}
+\caption{Ablations on different training patterns and target context length. `Short' means 1/4 of the target context length. `Long' equals to the target context length. Models are fully fine-tuned upon an LLaMA2~\citep{llama2} model in 7B size, on RedPajama~\citep{together2023redpajama} dataset. Results are tested in perplexity on PG19~\citep{pg19} validation split.}
+\resizebox{0.86\linewidth}{!}{
+\begin{tabular}{|l|c|cc|ccc|}
+\hline
+\multirow{2}{*}{Setting} & \multirow{2}{*}{Position Embedding}     & \multicolumn{2}{c|}{Training}     & \multicolumn{3}{c|}{Target Context Length}    \\
+                        &                                                                                   & Attention & Shift                 & 8192          & 16384         & 32768         \\ \hline \hline
+\multirow{2}{*}{Train-free}     & PI~\citep{position-interpolation}                  & \multicolumn{2}{c|}{\multirow{2}{*}{w/o fine-tuning}}                     & 15.82         & 94.57         & 236.99        \\
+                 & NTK-Aware~\citep{ntk-pe}                                                                         & \multicolumn{2}{c|}{}      & 10.89         & 88.44         & 932.85        \\ \hline \hline
+Full Attn                &      \multirow{3}{*}{PI~\citep{position-interpolation}}                                                                             & Long      & -                     & 8.02 & 8.05          & 8.04 \\
+Short Attn                   &           & Short     & \xmark & 8.29          & 8.83          & 9.47          \\
+S$^2$-Attn                    &              &  Short    & \cmark & 8.04          & 8.03 & 8.08          \\ \hline
+\end{tabular}
+}
+\label{tab:training-pattern}
+\end{center}
+\end{table}
+\section{LongLoRA}
+
+\subsection{Background}
+
+\paragraph{Transformer.}
+LLMs are typically built with transformers. Taking LLaMA2~\citep{llama2} for example, as shown in Figure~\ref{fig:long-lora}, an LLM model consists of an embedding input layer and a number of decoder layers. Each decoder layer comprises a self-attention module. It maps input features into a set of queries, keys, and values \{$q, k, v$\}, via linear projection layers with weight matrices \{$W_q, W_k, W_v$\}. Given \{$q, k, v$\}, it computes the outputs $o$ as
+\begin{equation}
+    o = \mathrm{softmax}(qk^T)v
+\end{equation}
+The outputs are then projected by a linear layer with a weight matrix $W_o$. And MLP layers are followed. Before and after self-attention modules, layer normalization~\citep{layernorm} is applied. A final normalization is conducted after all decoder layers.
+
+For long sequences, self-attention struggles with computation cost, which is quadratic to the sequence length. This dramatically slows down the training procedure and increases GPU memory costs.
+
+\paragraph{Low-rank Adaptation.}
+LoRA~\citep{lora} hypothesizes that the weight updates in pre-trained models have a low intrinsic rank during adaptation.
+For a pre-trained weight matrix $W \in \mathbb{R}^{d\times k}$, it is updated with a low-rank decomposition $W+\Delta W=W + BA$, where $B\in \mathbb{R}^{d\times r}$ and $A\in \mathbb{R}^{r\times k}$. The rank $r\ll min(d,k)$. During training, $W$ is frozen with no gradient updates, while A and B are trainable. This is the reason why LoRA training is much more efficient than full fine-tuning.
+
+In the Transformer structure, LoRA only adapts the attention weights ($W_q, W_k, W_v, W_o$) and freezes all other layers, including MLP and normalization layers. This manner is simple and parameter-efficient. However, we empirically show that only low-rank adaptation in attention weights does not work for long context extension.
+
+
+\subsection{Shift Short Attention}
+% design
+Standard self-attention pattern cost $O(n^2)$ computations, making LLMs on long sequences high memory cost and slow. To avoid this issue during training, we propose shift short attention~(S$^2$-Attn), as shown in Figure~\ref{fig:long-lora}. In the following, we explain our designs step by step.
+
+\paragraph{Pilot Study.}
+In Table~\ref{tab:training-pattern}, we first validate the importance of fine-tuning. Without fine-tuning, models perform worse as the context length grows up, even with proper position embeddings~\citep{position-interpolation, ntk-pe} equipped.
+We build up a standard baseline that is trained and tested with full attention and full fine-tuning, which presents consistently good quality in various context lengths.
+
+The first trial is to train with short attention, \textit{only pattern 1} in Figure~\ref{fig:long-lora}. As we know for a long context, the high cost mainly comes from self-attention modules. Thus, in this trial, since the input is long, we split into several groups in self-attention. For example, the model takes 8192 tokens as input in both the training and testing stages, but self-attention is conducted in each group with a 2048 size. The group number is 4, as ablated in Table~\ref{tab:group-size}. This pattern is efficient but still does not work in a very long context, as shown in Table~\ref{tab:training-pattern}. The perplexity becomes larger as the context length increases. The reason behind this is that there is no information exchange between different groups.
+
+To introduce communication between groups, we include a shifted pattern, as shown in Figure~\ref{fig:long-lora}. We shift the group partition by half group size in half attention heads. Taking the overall 8192 context length for example, in pattern 1, the first group conducts self-attention from 1$^{\textrm{st}}$ to 2048$^{\textrm{th}}$ tokens. In Pattern 2, the group partition is shifted by 1024. The first attention group begins from 1025$^{\textrm{th}}$ and ends at 3072$^{\textrm{th}}$ tokens, while the first and the last 1024 tokens belong to the same group. We use patterns 1 and 2 in each half self-attention heads respectively. This manner does not increase additional computation cost but enables the the information flow between different groups. We show that it gets close to the standard attention baseline in Table~\ref{tab:training-pattern}.
+
+\begin{table}[t]
+\begin{center}
+\caption{Ablation on attention patterns during fine-tuning. We fine-tune an LLaMA2 7B model to 32768 context length via various attention patterns, with the improved LoRA setting. We include four typical efficient attention designs, \textit{e.g.}, shift, dilate, stride sparse for comparison. `\textit{cro. heads / layers}' means to swap different attention settings across attention \textit{heads} or sequential \textit{layers}. Taking S$^2$-Attn as an example, `\textit{cro. layers}' is to swap between w/ and w/o shift in sequential self-attention layers.
+`\textit{only P1/P2}' means all attention heads use pattern 1 (all no shift) or Pattern 2 (all shift) in Figure~\ref{fig:long-lora}.
+Dilated attention~\citep{longnet} varies dilated rate from 1 to 4 in attention heads. Stride sparse attention is introduced in~\citep{sparse-transformer}, which is also swapped between local and stride attention in attention heads.}
+\resizebox{0.82\linewidth}{!}{
+\begin{tabular}{|c|cccc|c|c|}
+\hline
+\multirow{2}{*}{\begin{tabular}[c]{@{}c@{}}Test w/\\ Full-Attn\end{tabular}}   &  \multicolumn{4}{c|}{S$^2$-Attn} & Dilate &  Stride sparse\\
+ &  \textbf{cro. heads}  & \textit{cro. layers}  & \textit{only P1.}  & \textit{only P2.}  & \textit{cro. heads}        & \textit{cro. heads}           \\ \hline \hline
+      \xmark             &  8.64   &    {\em 8.63} &  9.17  & {\em 9.64}  & {\em 8.75}    &       {\em 31.46}     \\
+  \cmark          & \textbf{8.12}        &  9.70  & {\em 8.39}   &  9.81   & 11.78        &    $>$1000        \\ \hline
+\end{tabular}
+}
+\label{tab:attention-pattern}
+\end{center}
+\end{table}
+
+
+%##################################################################################################
+\begin{algorithm}[t]
+\caption{Pseudocode of Shift Short Attention in PyTorch-like style.}
+\label{algo:code}
+\algcomment{\fontsize{7.2pt}{0em}\selectfont \texttt{cat}: concatenation; \texttt{chunk}: split into the specified number of chunks; \texttt{roll}: roll the tensor along the given dimension.
+%\vspace{-1.em}
+}
+\definecolor{codeblue}{rgb}{0.25,0.5,0.5}
+\lstset{
+  backgroundcolor=\color{white},
+  basicstyle=\fontsize{7.2pt}{7.2pt}\ttfamily\selectfont,
+  columns=fullflexible,
+  breaklines=true,
+  captionpos=b,
+  commentstyle=\fontsize{7.2pt}{7.2pt}\color{codeblue},
+  keywordstyle=\fontsize{7.2pt}{7.2pt},
+%  frame=tb,
+}
+\begin{lstlisting}[language=python]
+# B: batch size; S: sequence length or number of tokens; G: group size;
+# H: number of attention heads; D: dimension of each attention head
+
+# qkv in shape (B, N, 3, H, D), projected queries, keys, and values
+# Key line 1: split qkv on H into 2 chunks, and shift G/2 on N
+qkv = cat((qkv.chunk(2, 3)[0], qkv.chunk(2, 3)[1].roll(-G/2, 1)), 3).view(B*N/G,G,3,H,D)
+
+# standard self-attention function
+out = self_attn(qkv)
+
+# out in shape (B, N, H, D)
+# Key line 2: split out on H into 2 chunks, and then roll back G/2 on N
+out = cat((out.chunk(2, 2)[0], out.chunk(2, 2)[1].roll(G/2, 1)), 2)
+\end{lstlisting}
+\end{algorithm}
+%##################################################################################################
+
+\paragraph{Consistency to Full Attention.}
+Existing efficient attention designs can also improve the efficiency of long-context LLMs.
+In Table~\ref{tab:attention-pattern}, we compare the proposed S$^2$-Attn with several typical efficient attention, including short attention, dilated attention~\citep{longnet},
+%block sparse attention~\citep{block-wise-self-attention},
+and stride sparse attention~\citep{sparse-transformer}. We show that S$^2$-Attn not only enables {\em efficient fine-tuning} but also supports {\em full attention testing}.
+
+Some efficient attention designs are infeasible for long-context fine-tuning.
+%For example, the LLaMA2 7B model has $>100$ perplexity on 32768 context length if being fine-tuned with block sparse attention~~\citep{block-wise-self-attention}.
+The transformers~\citep{block-wise-self-attention,sparse-transformer}, developed for training from scratch, have gaps to the standard full attention, which is used in pre-training. Thus, these attentions are not suitable for long context fine-tuning.
+S$^2$-Attn supports full attention testing, although the model is fine-tuned with shift short attention, as shown in Table~\ref{tab:attention-pattern}. Although other attentions, like dilated attention~\citep{longnet} and stride sparse attention~\citep{sparse-transformer}, can also be used in long context fine-tuning, models must be tested with the attention used during fine-tuning. Shifting prevents models from being over-fitted to specific attention patterns. In S$^2$-Attn, pattern 1 or 2 only does not work as in Table~\ref{tab:attention-pattern}.
+
+\paragraph{Easy Implementation.}
+Shift short attention is easy to implement. It involves only two steps: (1) shifting tokens in half attention heads, and (2) transposing features from token dimension to batch dimension. Two lines of code are enough. We provide a PyTorch-style code in Algorithm~\ref{algo:code}. In the following, we make a pilot study and clarify the reasons for our design step by step.
+
+\begin{table}[t]
+\begin{center}
+\caption{Ablation on fine-tuning and ablations in various settings. Models are trained based on LLaMA2~\citep{llama2} model in 7B size, with the proposed Shift Short Attention. The target context length is 32768.
+`+ Normal / Embed' means including normalization or embedding layers as trainable. We use RedPajama~\citep{together2023redpajama} dataset for training. Results are tested in perplexity on PG19~\citep{pg19} validation set. For long context adaptation, standard LoRA~\citep{lora} has a large gap to the full fine-tuning result. Without trainable normalization or embeddings, larger ranks in LoRA have no effects.}
+\resizebox{\linewidth}{!}{
+\begin{tabular}{|l|c|cccccc|cc|}
+\hline
+\multirow{2}{*}{Method} & \multirow{2}{*}{Full FT} & \multicolumn{6}{c|}{LoRA (rank)}                & \multicolumn{2}{c|}{LoRA (rank = 8)} \\
+                        &                                                                            & 8     & 16    & 32    & 64    & 128   & 256   & + Norm           & + Norm + Embed           \\ \hline \hline
+PPL              & 8.08                                                                       & 11.44 & 11.82 & 11.92 & 11.96 & 11.97 & 11.98 & 10.49            & 8.12             \\ \hline
+\end{tabular}
+}
+\label{tab:lora-settings}
+\end{center}
+\end{table}
+
+\subsection{Improved LoRA for Long Context}
+LoRA~\citep{lora} is an efficient and popular manner for adapting LLMs to other datasets. It saves much trainable parameters and memory cost, compared to full fine-tuning. However, adapting LLMs from short context length to long is not easy. We empirically observe an obvious gap between LoRA and full fine-tuning. As shown in Table~\ref{tab:lora-settings}, the gap between LoRA and full fine-tuning grows as the target context length becomes larger. And LoRA with larger ranks cannot reduce the gap.
+
+
+To bridge this gap, we open embedding and normalization layers for training. As shown in Table~\ref{tab:lora-settings}, they occupy limited parameters but make effects for long context adaptation. Especially for normalization layers, the parameters are only $0.004\%$ in the whole LLaMA2 7B. We denote this improved version of LoRA as LoRA$^+$ in experiments.
+
+\begin{table}[t]
+\begin{center}
+\caption{Evaluation perplexity on proof-pile dataset~\citep{pg19} test split. S$^2$-Attn: Shift Short Attention. LoRA$^{+}$: improved LoRA with embedding and normalization layers trainable. We fine-tune LLaMA2~\citep{llama2} in 7B and 13B model sizes. We use RedPajama~\citep{together2023redpajama} dataset for training. Models fine-tuned with LongLoRA show progressively lower perplexity with longer evaluation context length. We use the same training setting as the model evaluated on PG19~\citep{pg19}, which is introduced in Table~\ref{tab:main-result-pg19} in the appendix.}
+\resizebox{0.9\linewidth}{!}{
+\begin{tabular}{|c|c|cc|ccccc|}
+\hline
+\multirow{2}{*}{Size} & \multirow{2}{*}{\begin{tabular}[c]{@{}c@{}}Training\\ Context Length\end{tabular}} & \multicolumn{2}{c|}{LongLoRA} & \multicolumn{5}{c|}{Evaluation Context Length} \\
+                      &                                                                                    & S$^2$-Attn         & LoRA$^{+}$        & 2048    & 4096    & 8192   & 16384   & 32768   \\ \hline \hline
+\multirow{7}{*}{7B}   & \multirow{3}{*}{8192}                                                              &                 &             &   3.14      &     2.85    &   2.66     & -       & -       \\
+                      &                                                                                    & \cmark               &             & 3.15    & 2.86    & 2.68   & -       & -       \\
+                      &                                                                                    & \cmark               & \cmark           & 3.20    & 2.91    & 2.72   & -       & -       \\ \cline{2-9}
+                      & \multirow{2}{*}{16384}                                                             & \cmark               &             & 3.17    & 2.87    & 2.68   & 2.55    & -       \\
+                      &                                                                                    & \cmark               & \cmark           & 3.17    & 2.87    & 2.66   & 2.51    & -       \\ \cline{2-9}
+                      & \multirow{2}{*}{32768}                                                             & \cmark               &             & 3.20    & 2.90    & 2.69   & 2.54    & 2.49    \\
+                      &                                                                                    & \cmark               & \cmark           & 3.35    & 3.01    & 2.78   & 2.61    & 2.50    \\ \hline \hline
+\multirow{7}{*}{13B}  & \multirow{3}{*}{8192}                                                              &                 &             &   2.96      &    2.69     &   2.53     & -       & -       \\
+                      &                                                                                    & \cmark               &             & 3.01    & 2.74    & 2.57   & -       & -       \\
+                      &                                                                                    & \cmark               & \cmark           & 3.04    & 2.77    & 2.60   & -       & -       \\ \cline{2-9}
+                      & \multirow{2}{*}{16384}                                                             & \cmark               &             & 2.99    & 2.72    & 2.53   & 2.40    & -       \\
+                      &                                                                                    & \cmark               & \cmark           & 3.03    & 2.74    & 2.55   & 2.41    & -       \\ \cline{2-9}
+                      & \multirow{2}{*}{32768}                                                             & \cmark               &             &  3.04    &  2.75   & 2.56   & 2.42    & 2.33    \\
+                      &                                                                                    & \cmark               & \cmark           & 3.05    & 2.76    & 2.57   & 2.42    & 2.32    \\ \hline
+\end{tabular}
+}
+\label{tab:main-result-proof-pile}
+\end{center}
+\end{table}
+
+\begin{table}[t]
+\begin{center}
+\caption{Maximum context length that we can fine-tune for various model sizes on a single 8$\times$ A100 machine. We fine-tune LLaMA2~\citep{llama2} in 7B, 13B, and 70B model sizes, using RedPajama~\citep{together2023redpajama} dataset, and evaluate the perplexity on Proof-pile dataset~\citep{pg19} test split. We use FlashAttention-2~\citep{flash-attention2} and DeepSpeed~\citep{deepspeed} in Stage 3 during fine-tuning. With LongLoRA, the maximum context length for 7B, 13B, and 70B models are 100k, 64k, and 32k respectively. Evaluation on PG19~\citep{pg19} is Table~\ref{tab:maximum-size-model-pg19} in the appendix.}
+\resizebox{0.9\linewidth}{!}{
+\begin{tabular}{|c|c|ccccccc|}
+\hline
+\multirow{2}{*}{Size} & \multirow{2}{*}{\begin{tabular}[c]{@{}c@{}}Training\\ Context Length\end{tabular}} & \multicolumn{7}{c|}{Evaluation Context Length}       \\
+                      &                                                                                    & 2048 & 4096 & 8192 & 16384 & 32768 & 65536 & 100,000 \\ \hline \hline
+7B                    & 100,000                                                                            & 3.36 & 3.01 & 2.78 & 2.60  & 2.58 & 2.57  & 2.52  \\ %\hline
+13B                   & 65536                                                                              & 3.20 & 2.88 & 2.66 & 2.50  & 2.39  & 2.38  & -       \\ %\hline
+70B                   & 32768                                                                              & 2.84 & 2.57 & 2.39 & 2.26  & 2.17  & -     & -       \\ \hline
+\end{tabular}
+}
+\label{tab:maximum-size-model-proof-pile}
+\end{center}
+\end{table}
+
+
+\begin{table}[t]
+\begin{center}
+\caption{Evaluation on topic retrieval using LongChat~\citep{longchat2023}. We compare our model to other open LLMs with long contexts. This task involves retrieving target topics from a very long conversation with lengths around 3k, 6k, 10k, 13k, and 16k. As some questions in the evaluation set are longer than 16k, our model is fine-tuned via 18k context length upon LLaMA2 13B. It achieves comparable performance to LongChat-13B~\citep{longchat2023}, the state-of-the-art model in this task, while ours is from an efficient fine-tuning manner.}
+\resizebox{0.72\linewidth}{!}{
+\begin{tabular}{|l|ccccc|}
+\hline
+Evaluation Context & 3k   & 6k  & 10k  & 13k  & 16k  \\ \hline \hline
+ChatGLM2-6B~\citep{du2022glm}             & 0.88 & 0.46 & 0.02 & 0.02 & 0.02 \\
+MPT-30B-chat~\citep{MPT-30b}            &  0.96    &   \textbf{1.0}  &   0.76   &   -   &   -   \\
+MPT-7B-storywriter~\citep{MPT-7b}            &   0.46   &  0.46   &   0.28   &   0.34   &   0.36   \\
+LongChat-13B~\citep{longchat2023}            &  \textbf{1.0}    &  \textbf{1.0}   &   \textbf{1.0}   &   \textbf{0.98}   &  0.9    \\ \hline
+%Ours-13B-16k            &   \textbf{1.0}   &  0.98   &   \textbf{1.0}   &   \textbf{0.98}   &   0.88   \\
+Ours            &   \textbf{1.0}   &  0.98   &  0.98   &   \textbf{0.98}   &   \textbf{0.94}   \\ \hline
+
+\end{tabular}}
+\label{tab:longchat}
+\end{center}
+\end{table}
+\section{Experiment}
+\subsection{Experimental Settings}
+\label{exp:setting}
+\paragraph{Models.}
+We extend the pre-trained 7B, 13B, and 70B LLaMA2~\citep{llama2} models. The maximum extended context window sizes are up to 100k for 7B models, 65536 for 13B models, and 32768 for 70B models. The position indices for these models are re-scaled with Position Interpolation~\citep{position-interpolation}.
+
+\paragraph{Training Procedure.}
+We follow most training hyper-parameters in Position Interpolation~\citep{position-interpolation}, except that our batch size is smaller as we use a single 8$\times$ A100 GPUs machine in some cases. All models are fine-tuned via the next token prediction objective. We use AdamW~\citep{adamw} with $\beta_1 = 0.9$ and $\beta_2 = 0.95$. The learning rate is set to $2\times 10^{-5}$ for 7B and 13B models, and $10^{-5}$ for 70B models. We also use a linear learning rate warmup. The weight decay is zero. We set the per-device batch size as 1 and gradient accumulation steps as 8, which means that the global batch size equals 64, using 8 GPUs. We train our models for 1000 steps.
+
+\paragraph{Datasets.}
+We use the Redpajama~\citep{together2023redpajama} dataset for training.
+We evaluate the long-sequence language modeling performance of our fine-tuned models on the book corpus dataset PG19~\citep{pg19} and the cleaned Arxiv Math proof-pile dataset~\citep{proof-pile}. We use the test split of PG19~\citep{pg19}, consisting of 100 documents. For the proof-pile dataset, we also use the test split of it for evaluation. We follow Position Interpolation~\citep{position-interpolation} for Proof-pile data processing. We evaluate perplexity by using a sliding window approach with $S=256$, following~\citep{alibi}.
+
+In addition, we build a long context QA dataset, LongQA, for supervised fine-tuning. Although the models fine-tuned with Redpajama~\citep{together2023redpajama} present good perplexities, their chat ability is limited. We collect more than 3k question-answer pairs, relating to the materials like technical paper, science fiction, and other books. The questions we designed include summarization, relationships, characters, and other details related to the material. For more details, please refer to the appendix.
+
+\begin{table}[t]
+\begin{center}
+\caption{Efficiency profile in terms of FLOPs on various context lengths. We break down the LLaMA2 7B model into FFN (feed-forward layers), Proj (projection layers for queries, keys, values, and attention outputs), Attn (self-attention kernel), and Others (\textit{e.g.}, embedding, normalization, LLM head). The ratio of attention in the overall model increases as the context length increases. S$^2$-Attn reduces the FLOPs by a large margin, especially when the context length is large.}
+\resizebox{0.62\linewidth}{!}{
+\begin{tabular}{|c|c|ccccc|}
+\hline
+\multirow{2}{*}{\begin{tabular}[c]{@{}c@{}}Context\\ Length\end{tabular}} & \multirow{2}{*}{S$^2$-Attn} & \multicolumn{5}{c|}{FLOPs (T)}   \\
+                                                                          &                & Attn    & Proj           & FFN                                   & Others                          & Total  \\ \hline
+\multirow{2}{*}{8192}                                                     & \xmark            & 35.2      & \multirow{2}{*}{35.2}         & \multirow{2}{*}{70.9}  & \multirow{2}{*}{2.2}   & 143.5   \\
+                                                                          & \cmark           & 8.8               &                        &                        &                          & 117.1    \\ \hline
+\multirow{2}{*}{16384}                                                    & \xmark           & 140.7      & \multirow{2}{*}{70.4}   & \multirow{2}{*}{141.8}  & \multirow{2}{*}{4.3}   & 357.2   \\
+                                                                          & \cmark           & 35.2             &                        &                        &                        & 251.7   \\ \hline
+\multirow{2}{*}{32768}                                                    & \xmark           & 562.9       & \multirow{2}{*}{140.7}       & \multirow{2}{*}{283.7}  & \multirow{2}{*}{8.7}  & 996.0  \\
+                                                                          & \cmark        & 140.7                &                        &                        &                       & 573.8   \\ \hline
+\multirow{2}{*}{65536}                                                    & \xmark         & 2251.8         & \multirow{2}{*}{281.5}      & \multirow{2}{*}{567.4} & \multirow{2}{*}{17.3}  & 3118.0 \\
+                                                                          & \cmark         & 562.9                &                        &                        &                      & 1429.1  \\ \hline
+\end{tabular}}
+\label{tab:efficiency-comparison}
+\end{center}
+\end{table}
+
+\subsection{Main Results}
+\label{exp:main-result}
+
+\paragraph{Long-sequence Language Modeling.}
+
+In Table~\ref{tab:main-result-proof-pile} and Table~\ref{tab:main-result-pg19}, we report the perplexity for our models and baseline on Proof-pile~\citep{proof-pile} and PG19 datasets. Under certain training context lengths, our models achieve better perplexity with longer context sizes. This indicates the effectiveness of our efficient fine-tuning method. In Table~\ref{tab:main-result-proof-pile}, for the same training and evaluation context length cases, the perplexity decreases as the context size increases. By increasing the context window size from 8192 to 32768, for LLaMA2 7B model, we observe that the perplexity gets better from 2.72 to 2.50 by -0.22. For LLaMA2 13B model, we observe that the perplexity reduces from 2.60 to 2.32 by -0.28.
+
+In Table~\ref{tab:maximum-size-model-proof-pile}, we further examine the maximum context length that we can fine-tune on a single 8$\times$ A100 machine. We extend LLaMA2 7B, 13B, and 70B to 100k, 65536, 32768 context length respectively. LongLoRA achieves promising results on these extremely large settings. In addition, we find some perplexity degradation on small context sizes for the extended models. This is a known limitation of Position Interpolation~\citep{position-interpolation}.
+
+\paragraph{Retrieval-based Evaluation.}
+In addition to long-sequence language modeling, we also conduct experiments on retrieval in long contexts. In Table~\ref{tab:longchat}, we compare our model with other open LLMs on the topic retrieval task introduced in LongChat~\citep{longchat2023}. This task is to retrieve the target topic from a very long conversation, with lengths varying from 3k, 6k, 10k, 13k, to 16k. As some questions in LongChat~\citep{longchat2023} are longer than 16k, we fine-tuned LLaMA2 13B with a context length of 18k. The training cost is similar to that for 16k. Our model achieves comparable performance to LongChat-13B~\citep{longchat2023}, the state-of-the-art model in this task. Unlike LongChat-13B~\citep{longchat2023}, which is fully fine-tuned on self-collected long context conversation text, our model is efficiently adapted on the open RedPajama~\citep{together2023redpajama} via next-token generation. Our model even slightly outperforms LongChat-13B in the 16k evaluation.
+
+\begin{table}[t]
+\begin{center}
+\caption{Ablation on fine-tuning steps in both full fine-tuning and low-rank training (with trainable normalization and embedding).
+We fine-tune LLaMA2~\citep{llama2} 7B with the proposed Shift Short Attention. The target context length is 8192.
+We use RedPajama~\citep{together2023redpajama} for training and  PG19~\citep{pg19} validation set for perplexity testing. Full fine-tuning has a faster convergence than the low-rank at the beginning, while the final gap is not large.}
+\resizebox{0.92\linewidth}{!}{
+\begin{tabular}{|c|ccccccccccc|}
+\hline
+\multirow{2}{*}{Training} & \multicolumn{11}{c|}{Number of fine-tuning steps}                           \\
+                                                                             & 0     & 100  & 200  & 300  & 400  & 500  & 600  & 700  & 800  & 900  & 1000 \\ \hline
+Full FT                                                                            & 15.82 & 8.17 & 8.10 & 8.07 & 8.06 & 8.03 & 7.99 & 7.99 & 7.96 & 7.95 &   7.94   \\
+LoRA$^+$                                                                            & 15.82 & 8.63 & 8.16 & 8.15 & 8.14 & 8.12 & 8.11 & 8.10 & 8.08 & 8.04 & 8.02 \\ \hline
+\end{tabular}
+}
+\label{tab:num-steps}
+\end{center}
+\end{table}
+
+\subsection{Ablation Study}
+\label{exp:ablation}
+\paragraph{Efficiency Profile.}
+In Table~\ref{tab:efficiency-comparison}, we breakdown LLaMA2 7B~\citep{llama2} into various types of layers, including FFN - feed-forward layers, Proj - projection for queries, values, keys, and attention outputs, Attn - self-attention computation, Others - other layers like embedding, normalization, LLM head. We analyze FLOPs. For full attention, the proportion of Attn sharply increases as the context length increases. For example, Attn has 24.5\% of the total FLOPs at the 8192 context length while it increases to 72.2\% at the 65536 context length. It decreases to 39.4\% when $S^2$-Attn is used.
+
+\paragraph{Ablation on Fine-tuning Steps.}
+We report the relationship between perplexity and fine-tuning steps for an LLaMA2 7B model extending to the 8192 context length on the PG19 validation set, in Table~\ref{tab:num-steps}. We see that without fine-tuning, at step 0, the model has a limited long context capability, \textit{e.g.}, 15.82 perplexity. We show that the perplexity drops quickly. Full fine-tuning converges faster than low-rank training. They come closer after 200 steps, without a large gap at the end.
+
+\paragraph{Attention Patterns.}
+In Table~\ref{tab:attention-pattern}, we show the effects of different attention patterns during fine-tuning. We fine-tune an LLaMA2 7B~\citep{llama2} model to 32768 context length on Redpajama~\citep{together2023redpajama} datasets and evaluate the perplexity on PG19~\citep{pg19} validation set. We first examine the manner of swapping among various settings. For the shift operation we used in LongLoRA, there are three choices: disabling it, shifting between sequential layers, and shifting among attention heads. We show that shifting between layers is acceptable but not the best. In addition, setting all attention heads as pattern 1 or pattern 2 does not work.
+
+We then test other types of efficient attention designs, including dilated attention~\citep{longnet},
+%block sparse attention~\citep{block-wise-self-attention},
+and stride sparse attention~\citep{sparse-transformer}. For dilated attention~\citep{longnet}, we vary the dilate rate from 1 to 4 evenly among attention heads. %For block sparse attention~\citep{block-wise-self-attention}, we use $n=4$ block-wise masking matrices in attention heads.
+Stride sparse attention~\citep{sparse-transformer} contains both local and stride patterns. %We set both the local width and the stride as 1/4 of the total sequence length. These settings share similar computational costs.
+These attention patterns are invented in training-from-scratch transformers. This experiment is to examine their capability of fine-tuning on pre-trained LLMs~\citep{llama2}, toward long context adaptation. Dilated attention performs well in full fine-tuning but is not well with low-rank adaptation. Fine-tuning with stride sparse attention is harmful. They have a large gap to full attention, which is applied in the pre-training stage.
+
+\section{Conclusion}
+\label{conclusion}
+In this work, we propose LongLoRA that can efficiently extend the context length of LLMs to be significantly larger. LongLoRA has less GPU memory cost and training time than standard full fine-tuning, with minimal accuracy compromise. At the architecture level, we propose shift short attention to approximate the standard self-attention pattern during training. Shift short attention is easy to implement, requiring only two lines of code. Moreover, models trained via shift short attention retain the original standard attention architecture during inference, making most pre-existing infrastructure and optimization reusable. At the training level, we bridge the gap between LoRA and full fine-tuning with trainable normalization and embedding. Our method can extend LLaMA2 7B to 100k context length and 70B model to 32k context length, on a single 8$\times$ A100 machine.
+We believe that LongLoRA is a general method that could be compatible with more types of LLMs and position encodings, which we plan to investigate in the future.
+
+\textbf{Acknowledgement}
+We would like to thank Xiuyu Li and Bohao Pengfor the helpful discussions.
+
+
+\bibliography{iclr2024_conference}
+\bibliographystyle{iclr2024_conference}
+
+\newpage
+\begin{table}[t]
+\begin{center}
+\caption{Evaluation perplexity on PG19 dataset~\citep{pg19} test split.
+S$^2$-Attn: Shift Short Attention. LoRA$^{+}$: improved LoRA with embedding and normalization layers trainable. We fine-tune LLaMA2~\citep{llama2} in 7B and 13B sizes along 8192, 16384, and 32768 context length.}
+\resizebox{0.9\linewidth}{!}{
+\begin{tabular}{|c|c|cc|ccccc|}
+\hline
+\multirow{2}{*}{Size} & \multirow{2}{*}{\begin{tabular}[c]{@{}c@{}}Training\\ Context Length\end{tabular}} & \multicolumn{2}{c|}{LongLoRA} & \multicolumn{5}{c|}{Evaluation Context Length} \\
+                                                                      &                                                                                    & S$^2$-Attn         & LoRA$^{+}$        & 2048    & 4096    & 8192   & 16384   & 32768   \\ \hline \hline
+\multirow{7}{*}{7B}                                                   & \multirow{3}{*}{8192}                                                              &       &         &        7.55     &   7.21      &  6.98         & -       & -       \\
+                                                                      &                                                                                    & \cmark               &             & 7.53    & 7.20    & 7.01   & -       & -       \\
+                                                                      &                                                                                    & \cmark               & \cmark           & 7.70    & 7.35    & 7.14   & -       & -       \\ \cline{2-9}
+                                                                      & \multirow{2}{*}{16384}                                                             & \cmark               &             & 7.56    & 7.21    & 6.97   & 6.80    & -       \\
+                                                                      &                                                                                    & \cmark               & \cmark           & 7.65    & 7.28    & 7.02   & 6.86   & -       \\ \cline{2-9}
+                                                                      & \multirow{2}{*}{32768}                                                             & \cmark               &             & 7.76    & 7.36    & 7.09   & 7.04    & 7.03    \\
+                                                                      &                                                                                    & \cmark               & \cmark           &    8.29     &    7.83     &    7.54    &    7.35     &    7.22     \\ \hline \hline
+\multirow{6}{*}{13B}                                                  & \multirow{3}{*}{8192}                                                              &                &             &   6.95  &   6.60  &  6.43  & -       & -       \\
+         &                & \cmark               &             & 6.94    & 6.63    & 6.45   & -       & -       \\
+
+                                                                      &                                                                                    & \cmark               & \cmark           & 7.03    & 6.73    & 6.58   & -       & -       \\ \cline{2-9}
+                                                                      & \multirow{2}{*}{16384}                                                             & \cmark               &             & 6.90    & 6.58    & 6.37   & 6.22    & -       \\
+                                                                      &                                                                                    & \cmark               & \cmark           & 7.05        & 6.70        & 6.47       & 6.31        & -       \\ \cline{2-9}
+                                                                      & \multirow{2}{*}{32768}                                                             & \cmark               &             &    7.14 &  6.76       & 6.52       &     6.39    &  6.36       \\
+                                                                      &                                                                                    & \cmark               & \cmark           &      7.14   &   6.78      & 6.55      &   6.38      &       6.29  \\ \hline %\hline
+                                                                                                     %70B         &     32768   & \cmark               & \cmark           &        5.93  &   5.63      &  5.44      &      5.32   &     5.27    \\ \hline
+
+\end{tabular}
+}
+\label{tab:main-result-pg19}
+\end{center}
+\end{table}
+
+\begin{table}[t]
+\begin{center}
+\caption{Evaluation perplexity on PG19 dataset~\citep{pg19}, with the maximum context length that we can fine-tune on a single 8$\times$ A100 machine. We fine-tune LLaMA2~\citep{llama2} models, using RedPajama~\citep{together2023redpajama} dataset. We use the same setting to that in Table~\ref{tab:maximum-size-model-proof-pile}.}
+\resizebox{0.9\linewidth}{!}{
+\begin{tabular}{|c|c|ccccccc|}
+\hline
+\multirow{2}{*}{Size} & \multirow{2}{*}{\begin{tabular}[c]{@{}c@{}}Training\\ Context Length\end{tabular}} & \multicolumn{7}{c|}{Evaluation Context Length}       \\
+                      &                                                                                    & 2048 & 4096 & 8192 & 16384 & 32768 & 65536 & 100,000 \\ \hline \hline
+7B                    & 100,000                                                                            & 8.38 & 7.90 & 7.57 & 7.33  & 7.16  & 7.06  & 7.04    \\ %\hline
+13B                   & 65536                                                                              & 7.63 & 7.21 & 6.94 & 6.75  & 6.62  & 6.57  & -       \\ %\hline
+70B                   & 32768                                                                              & 5.93 & 5.63 & 5.44 & 5.32  & 5.27  & -     & -       \\ \hline
+\end{tabular}
+}
+\label{tab:maximum-size-model-pg19}
+\end{center}
+\end{table}
+
+
+
+\begin{table}[t]
+\begin{center}
+\caption{Ablation on group size. We conduct experiments upon an LLaMA2 7B model and fine-tune it to 8192 context length via LongLoRA on PG19. We vary the group size of Shift Short Attention from \{1/2, 1/4, 1/6, 1/8\} of the target context length. `Full' means the standard full attention.}
+\resizebox{0.5\linewidth}{!}{
+\begin{tabular}{|c|c|cclc|}
+\hline
+Group & Full & 1/2 & 1/4 & 1/6 & 1/8 \\ \hline
+PPL   &   8.02   & 8.04 &   8.04  &  8.10   &  8.16   \\ \hline
+\end{tabular}}
+\label{tab:group-size}
+\end{center}
+\end{table}
+\section*{Appendix}
+\paragraph{Environments.}
+All our experiments are conducted on an $8\times$ A100 machine. We train all models using PyTorch~\citep{pytorch} with the DeepSpeed~\citep{deepspeed} and FlashAttention-2~\citep{flash-attention2}. Gradient checkpoint is used by default, which is a common technique in the Peft codebase~\cite{peft}. Note that sometimes, like fine-tuning 7B models to 8192 context size, 3090 Ti GPUs are acceptable.
+
+\paragraph{Evaluation Perplexity on PG19 Test Split.}
+In Table~\ref{tab:main-result-pg19} and Table~\ref{tab:maximum-size-model-pg19}, we present the evaluation results on the PG19 test split. We use the same training settings as the models in Table~\ref{tab:main-result-proof-pile} and Table~\ref{tab:maximum-size-model-proof-pile}. Similarly, for a model trained on a certain context length, as the evaluation context length increases, our models achieve better perplexity. Note that the perplexity in Table~\ref{tab:main-result-pg19} and Table~\ref{tab:maximum-size-model-pg19} is higher than that in the Proof-pile dataset, as PG19~\citep{pg19} has very different writing styles.
+
+\paragraph{Ablation on Group Sizes.}
+In Table~\ref{tab:group-size}, we provide an ablation study on the group size of the shift short attention. We experimented on fine-tuning LLaMA2 7B to 8192 context length via LongLoRA. The group size varies from \{1/2, 1/4, 1/6, 1/8\} of the target context length. For example, the group size is 1024 for 1/8 of the context length 8192. We find that the 1/2 and 1/4 settings have minor gap to full attention fine-tuning. Group sizes less than 1/4 would be not good enough. We set the group size as 1/4 of the context length in experiments by default.
+
+\paragraph{LongQA for Supervised Fine-tuning.}
+To improve the chat ability of our models, we build up a long context QA dataset, LongQA, for supervised fine-tuning~(SFT). It contains more than 3k question-answer pairs. We build the prompt format as the following line:
+
+{\em Below is \{material\_type\}. Memorize the content and answer my question after the paper. \{material\_content\} $n$ Now the material ends. \{question\}}
+
+\{material\_type\} can be "book", "paper", and others. \{material\_content\} is the long-context content in the document. \{question\} is the questions we design. We list some example questions as the following:
+
+\begin{itemize}
+    \item Please tell me what high-level idea the author wants to indicate in this book.
+    \item Please describe the relationship among the roles in the book.
+    \item What are the main contributions and novelties of this paper?
+    \item What are some limitations of the proposed method?
+    \item Why doesn't Professor Snape seem to like Harry?
+    \item ...
+\end{itemize}
+These questions can be some commonly used ones, like summarization and limitation. Or they can be specific to the material, like the question that is related to some roles in the book. The context length of each question is no longer than 32k tokens.
+
+For SFT on LongQA, we use the models that have already been fine-tuned on Redpajama~\citep{together2023redpajama} for context extension in this step. We use the same learning rate, weight decay, and batch sizes as the context extension step. We train the models for 3 epochs. In the following, we provide some example questions and the answers from our model, in Figure~\ref{fig:demo1}, Figure~\ref{fig:demo2}, and Figure~\ref{fig:demo3}.
+
+\newpage
+\begin{figure*}[t]
+\begin{center}
+\includegraphics[width=1.0\linewidth]{figures/demo1.pdf}
+\end{center}
+\caption{Examples on book sections\protect\footnotemark[1]\protect\footnotemark[2]\protect\footnotemark[3] and questions related to abstraction and character. For all these examples, we select the related section in each book with less than 32k tokens.}
+\label{fig:demo1}
+\end{figure*}
+\footnotetext[1]{\scriptsize\url{https://en.wikipedia.org/wiki/Death\%27s_End}}
+\footnotetext[2]{\scriptsize\url{https://en.wikipedia.org/wiki/Journey_to_the_West}}
+\footnotetext[3]{\scriptsize\url{https://en.wikipedia.org/wiki/The_Two_Towers}}
+
+\begin{figure*}[t]
+\begin{center}
+\includegraphics[width=\linewidth]{figures/demo2.pdf}
+\end{center}
+\caption{Examples on book sections\protect\footnotemark[4]\protect\footnotemark[5]\protect\footnotemark[6] and questions of relationship, details, and summarization.}
+\label{fig:demo2}
+\end{figure*}
+\footnotetext[4]{\scriptsize\url{https://en.wikipedia.org/wiki/Harry_Potter_and_the_Philosopher\%27s_Stone}}
+\footnotetext[5]{\scriptsize\url{https://en.wikipedia.org/wiki/Harry_Potter_and_the_Chamber_of_Secrets}}
+\footnotetext[6]{\scriptsize\url{https://en.wikipedia.org/wiki/War_and_Peace}}
+
+\begin{figure*}[t]
+\begin{center}
+\includegraphics[width=1.0\linewidth]{figures/demo-paper.pdf}
+\end{center}
+\caption{Examples on paper~\citep{renas,3d-gnn,geonet++} and questions related to contribution, limitation, and summarization.}
+\label{fig:demo3}
+\end{figure*}
+\end{document}
