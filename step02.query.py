@@ -2,10 +2,9 @@ import json
 
 import numpy as np
 import openai
+from faiss import IndexFlatL2
 
 openai.api_key_path = "API.Key"
-
-from faiss import IndexFlatL2
 
 
 def main():
@@ -17,15 +16,6 @@ def main():
     stream_response(response)
 
 
-def get_query_emb(query_text: str):
-    resp = openai.Embedding.create(
-        model="text-embedding-ada-002",
-        input=[query_text],
-    )
-    query_emb = resp["data"][0]["embedding"]
-    return np.array([query_emb])
-
-
 def load_data(chunk_path, emb_path):
     with open(chunk_path, "rt", encoding="UTF-8") as fp:
         chunks = json.load(fp)
@@ -34,6 +24,15 @@ def load_data(chunk_path, emb_path):
     vectors.add(key_emb)
 
     return chunks, vectors
+
+
+def get_query_emb(query_text: str):
+    resp = openai.Embedding.create(
+        model="text-embedding-ada-002",
+        input=[query_text],
+    )
+    query_emb = resp["data"][0]["embedding"]
+    return np.array([query_emb])
 
 
 def build_prompt(q_emb, q_text, vectors: IndexFlatL2, value_chunks):
@@ -69,7 +68,3 @@ def stream_response(response):
 
 if __name__ == "__main__":
     main()
-
-"""
-
-"""
