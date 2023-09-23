@@ -1,6 +1,6 @@
 # Latex Paper QA
 
-這是一份結合 OpenAI Embedding API 與 ChatGPT API 的論文問答機器人，是一份示範用的程式碼。
+這是一份結合 OpenAI Embedding API 與 ChatGPT API 的論文問答機器人，為示範用的專案。
 
 ## 環境
 
