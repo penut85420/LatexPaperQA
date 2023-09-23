@@ -13,6 +13,8 @@ def main():
     query_emb = get_query_emb(query_text)
     prompt = build_prompt(query_emb, query_text, vectors, chunks)
     response = create_chat(prompt)
+
+    print(f"問題：{query_text}\n回答：")
     stream_response(response)
 
 
