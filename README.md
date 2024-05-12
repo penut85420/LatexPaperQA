@@ -6,11 +6,21 @@
 
 - Ubuntu 22.04
 - Pyhton 3.10
-  - `tiktoken==0.5.1`
-  - `openai==0.28.0`
-  - `faiss-cpu==1.7.4`
-- 將 OpenAI API Key 存在專案根目錄的 `API.Key` 裡面。
-  - 注意：本專案會由 OpenAI 收取額外費用。
+  - `tiktoken==0.6.0`
+  - `openai==1.28.1`
+  - `faiss-cpu==1.8.0`
+- 注意：本專案會由 OpenAI 收取額外費用。
+
+## 使用
+
+- 將 OpenAI API Key 放在 `OPENAI_API_KEY` 環境變數裡面。
+
+```sh
+# Linux
+export OPENAI_API_KEY="sk-..."
+# Windows
+$env:OPENAI_API_KEY="sk-..."
+```
 
 ## 檔案
 

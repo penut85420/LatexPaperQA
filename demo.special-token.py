@@ -2,7 +2,10 @@ import tiktoken
 
 tk = tiktoken.get_encoding("cl100k_base")
 
-print(tk.encode("<|endofprompt|>"))
+try:
+    print(tk.encode("<|endofprompt|>"))
+except Exception as e:
+    print(e)
 # ValueError: Encountered text corresponding to disallowed special token.
 
 print(tk.encode("<|endofprompt|>", disallowed_special=()))

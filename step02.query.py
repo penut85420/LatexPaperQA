@@ -1,21 +1,20 @@
 import json
 
 import numpy as np
-import openai
 from faiss import IndexFlatL2
-
-openai.api_key_path = "API.Key"
+from openai import OpenAI
 
 
 def main():
+    client = OpenAI()
     query_text = "請介紹這篇論文"
     chunks, vectors = load_data("data/chunks.json", "data/embs.npy")
-    query_emb = get_query_emb(query_text)
+    query_emb = get_query_emb(client, query_text)
     prompt = build_prompt(query_emb, query_text, vectors, chunks)
-    response = create_chat(prompt)
+    stream_response = create_chat(client, prompt)
 
     print(f"問題：{query_text}\n回答：")
-    stream_response(response)
+    stream_response()
 
 
 def load_data(chunk_path, emb_path):
@@ -28,12 +27,12 @@ def load_data(chunk_path, emb_path):
     return chunks, vectors
 
 
-def get_query_emb(query_text: str):
-    resp = openai.Embedding.create(
-        model="text-embedding-ada-002",
+def get_query_emb(client: OpenAI, query_text: str):
+    resp = client.embeddings.create(
+        model="text-embedding-3-small",
         input=[query_text],
     )
-    query_emb = resp["data"][0]["embedding"]
+    query_emb = resp.data[0].embedding
     return np.array([query_emb])
 
 
@@ -46,9 +45,9 @@ def build_prompt(q_emb, q_text, vectors: IndexFlatL2, value_chunks):
     return "\n\n".join(prompts)
 
 
-def create_chat(prompt):
+def create_chat(client: OpenAI, prompt):
     sys_prompt = "你現在是個專業的文件檢索問答機器人，請根據文件內容的資訊回答問題。"
-    return openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": sys_prompt},
@@ -57,15 +56,15 @@ def create_chat(prompt):
         stream=True,
     )
 
-
-def stream_response(response):
-    for resp in response:
-        try:
-            token = resp["choices"][0]["delta"]["content"]
+    def stream_response():
+        for resp in response:
+            if not resp.choices:
+                continue
+            token = resp.choices[0].delta.content
             print(end=token, flush=True)
-        except:
-            pass
-    print()
+        print()
+
+    return stream_response
 
 
 if __name__ == "__main__":

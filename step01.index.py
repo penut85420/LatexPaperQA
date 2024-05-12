@@ -1,12 +1,11 @@
 import json
 import os
+import re
 from tempfile import NamedTemporaryFile as NTF
+
 import numpy as np
-import openai
 import tiktoken
-
-openai.api_key_path = "API.Key"
-
+from openai import OpenAI
 
 DUMP = False
 
@@ -46,8 +45,7 @@ def iter_tex(data_dir):
 def get_segments(full_path):
     with open(full_path, "rt", encoding="UTF-8") as fp:
         text = fp.read().strip()
-        while "  " in text:
-            text = text.replace("  ", " ")
+        text = re.sub(" +", " ", text)
         return text.split("\n")
 
 
@@ -91,11 +89,12 @@ def dump_segments(segments):
 
 
 def create_embeddings(chunks):
-    resp = openai.Embedding.create(
-        model="text-embedding-ada-002",
+    client = OpenAI()
+    resp = client.embeddings.create(
+        model="text-embedding-3-small",
         input=chunks,
     )
-    embs = [item["embedding"] for item in resp["data"]]
+    embs = [item.embedding for item in resp.data]
     embs = np.array(embs)
 
     print(f"Embedding Shape: {embs.shape}")
@@ -104,7 +103,8 @@ def create_embeddings(chunks):
 
 
 def dump_data(chunks, embs, data_dir):
-    with open(f"{data_dir}/chunks.json", "wt", encoding="UTF-8") as fp:
+    chunk_path = f"{data_dir}/chunks.json"
+    with open(chunk_path, "wt", encoding="UTF-8") as fp:
         json.dump(chunks, fp, ensure_ascii=False)
     np.save(f"{data_dir}/embs.npy", embs)
 
